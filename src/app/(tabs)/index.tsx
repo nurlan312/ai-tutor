@@ -1,98 +1,157 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+
+import { useEffect, useState } from 'react';
+import { Pressable, StyleSheet } from 'react-native';
+import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { supabase } from '@/lib/supabase';
+import { Spacing } from '@/constants/theme';
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+type ViewState = 'loading' | 'guest' | 'needs-language' | 'needs-test' | 'ready';
 
 export default function HomeScreen() {
+  const [state, setState] = useState<ViewState>('loading');
+
+  useEffect(() => {
+    checkUserState();
+
+    const { data: listener } = supabase.auth.onAuthStateChange(() => {
+      checkUserState();
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  async function checkUserState() {
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      setState('guest');
+      return;
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('target_languages')
+      .eq('id', user.id)
+      .single();
+
+    if (!profile || !profile.target_languages || profile.target_languages.length === 0) {
+      setState('needs-language');
+      return;
+    }
+
+    const { data: levels } = await supabase
+      .from('user_levels')
+      .select('id')
+      .eq('user_id', user.id)
+      .limit(1);
+
+    if (!levels || levels.length === 0) {
+      setState('needs-test');
+      return;
+    }
+
+    setState('ready');
+  }
+
+  if (state === 'loading') {
+    return (
+      <ThemedView style={styles.container}>
+        <SafeAreaView style={styles.safeArea}>
+          <ThemedText>Загрузка...</ThemedText>
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
+
+  if (state === 'guest') {
+    return (
+      <ThemedView style={styles.container}>
+        <SafeAreaView style={styles.safeArea}>
+          <ThemedText type="title" style={styles.title}>
+            ИИ-репетитор
+          </ThemedText>
+          <ThemedText style={styles.subtitle}>
+            Учи английский и кыргызский язык с персональным ИИ-учителем.
+            Диалоги, уроки, проверка ошибок — в удобное время, в своём темпе.
+          </ThemedText>
+          <Pressable style={styles.button} onPress={() => router.push('/auth/sign-up')}>
+            <ThemedText style={styles.buttonText}>Начать обучение</ThemedText>
+          </Pressable>
+          <Pressable onPress={() => router.push('/auth/sign-in')}>
+            <ThemedText type="link">Уже есть аккаунт? Войти</ThemedText>
+          </Pressable>
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
+
+  if (state === 'needs-language') {
+    return (
+      <ThemedView style={styles.container}>
+        <SafeAreaView style={styles.safeArea}>
+          <ThemedText type="title" style={styles.title}>
+            Почти готово
+          </ThemedText>
+          <Pressable
+            style={styles.button}
+            onPress={() => router.push('/onboarding/languages')}>
+            <ThemedText style={styles.buttonText}>Выбрать язык</ThemedText>
+          </Pressable>
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
+
+  if (state === 'needs-test') {
+    return (
+      <ThemedView style={styles.container}>
+        <SafeAreaView style={styles.safeArea}>
+          <ThemedText type="title" style={styles.title}>
+            Определим твой уровень
+          </ThemedText>
+          <ThemedText style={styles.subtitle}>
+            Пройди короткий тест, чтобы получить персональный план обучения.
+          </ThemedText>
+          <Pressable style={styles.button} onPress={() => router.push('/onboarding/test')}>
+            <ThemedText style={styles.buttonText}>Пройти тест</ThemedText>
+          </Pressable>
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
-
-        <ThemedText type="code" style={styles.code}>
-          get started
+        <ThemedText type="title" style={styles.title}>
+          С возвращением!
         </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
-
-        {Platform.OS === 'web' && <WebBadge />}
+        <ThemedText style={styles.subtitle}>
+          Здесь будет твой план обучения и уроки.
+        </ThemedText>
       </SafeAreaView>
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
+  container: { flex: 1 },
   safeArea: {
     flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
     paddingHorizontal: Spacing.four,
     gap: Spacing.four,
   },
-  title: {
-    textAlign: 'center',
+  title: { textAlign: 'center' },
+  subtitle: { textAlign: 'center', opacity: 0.7 },
+  button: {
+    backgroundColor: '#3B82F6',
+    padding: 14,
+    borderRadius: 8,
+    alignItems: 'center',
   },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
-  },
+  buttonText: { color: 'white', fontWeight: 'bold' },
 });
