@@ -30,6 +30,9 @@ export default function AppTabs() {
           <TabTrigger name="lessons" href="/lessons" asChild>
             <TabButton>Уроки</TabButton>
           </TabTrigger>
+          <TabTrigger name="chat" href="/chat" asChild>
+            <TabButton>Чат</TabButton>
+          </TabTrigger>
         </CustomTabList>
       </TabList>
     </Tabs>

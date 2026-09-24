@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
@@ -15,10 +15,15 @@ type Lesson = {
 
 type Exercise = {
   id: string;
+  type: string;
   question: string;
   options: string[];
   correct_answer: string;
 };
+
+function normalize(value: string) {
+  return value.trim().toLowerCase();
+}
 
 export default function LessonScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -43,7 +48,7 @@ export default function LessonScreen() {
 
     const { data: exercisesData } = await supabase
       .from('exercises')
-      .select('id, question, options, correct_answer')
+      .select('id, type, question, options, correct_answer')
       .eq('lesson_id', id);
 
     setLesson(lessonData);
@@ -55,9 +60,28 @@ export default function LessonScreen() {
     setSelectedAnswer(option);
   }
 
+  async function saveProgress(score: number) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user && lesson) {
+      await supabase.from('user_progress').upsert(
+        {
+          user_id: user.id,
+          lesson_id: lesson.id,
+          completed: true,
+          score,
+          completed_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,lesson_id' }
+      );
+    }
+  }
+
   async function handleNext() {
     const exercise = exercises[currentExercise];
-    const isCorrect = selectedAnswer === exercise.correct_answer;
+    const isCorrect =
+      exercise.type === 'fill_blank'
+        ? normalize(selectedAnswer ?? '') === normalize(exercise.correct_answer)
+        : selectedAnswer === exercise.correct_answer;
     const newCorrectCount = isCorrect ? correctCount + 1 : correctCount;
 
     if (!isCorrect) {
@@ -78,20 +102,7 @@ export default function LessonScreen() {
       return;
     }
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user && lesson) {
-      await supabase.from('user_progress').upsert(
-        {
-          user_id: user.id,
-          lesson_id: lesson.id,
-          completed: true,
-          score: Math.round((newCorrectCount / exercises.length) * 100),
-          completed_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,lesson_id' }
-      );
-    }
-
+    await saveProgress(Math.round((newCorrectCount / exercises.length) * 100));
     setCorrectCount(newCorrectCount);
     setStep('done');
   }
@@ -120,7 +131,15 @@ export default function LessonScreen() {
             ))}
           </ScrollView>
 
-          <Pressable style={styles.button} onPress={() => setStep('exercises')}>
+          <Pressable
+            style={styles.button}
+            onPress={() => {
+              if (exercises.length > 0) {
+                setStep('exercises');
+              } else {
+                saveProgress(100).then(() => setStep('done'));
+              }
+            }}>
             <ThemedText style={styles.buttonText}>
               {exercises.length > 0 ? 'К упражнениям' : 'Завершить урок'}
             </ThemedText>
@@ -132,6 +151,8 @@ export default function LessonScreen() {
 
   if (step === 'exercises' && exercises.length > 0) {
     const exercise = exercises[currentExercise];
+    const canProceed = !!selectedAnswer && selectedAnswer.trim().length > 0;
+
     return (
       <ThemedView style={styles.container}>
         <SafeAreaView style={styles.safeArea}>
@@ -140,22 +161,34 @@ export default function LessonScreen() {
           </ThemedText>
           <ThemedText type="title" style={styles.question}>{exercise.question}</ThemedText>
 
-          {exercise.options.map((option) => {
-            const isSelected = selectedAnswer === option;
-            return (
-              <Pressable
-                key={option}
-                style={[styles.option, isSelected && styles.optionSelected]}
-                onPress={() => handleAnswer(option)}>
-                <ThemedText>{option}</ThemedText>
-              </Pressable>
-            );
-          })}
+          {exercise.type === 'fill_blank' ? (
+            <TextInput
+              style={styles.textInput}
+              placeholder="Введи ответ..."
+              placeholderTextColor="#888"
+              value={selectedAnswer ?? ''}
+              onChangeText={setSelectedAnswer}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          ) : (
+            exercise.options.map((option) => {
+              const isSelected = selectedAnswer === option;
+              return (
+                <Pressable
+                  key={option}
+                  style={[styles.option, isSelected && styles.optionSelected]}
+                  onPress={() => handleAnswer(option)}>
+                  <ThemedText>{option}</ThemedText>
+                </Pressable>
+              );
+            })
+          )}
 
           <Pressable
-            style={[styles.button, !selectedAnswer && styles.buttonDisabled]}
+            style={[styles.button, !canProceed && styles.buttonDisabled]}
             onPress={handleNext}
-            disabled={!selectedAnswer}>
+            disabled={!canProceed}>
             <ThemedText style={styles.buttonText}>Далее</ThemedText>
           </Pressable>
         </SafeAreaView>
@@ -198,6 +231,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   optionSelected: { borderColor: '#3B82F6', backgroundColor: '#3B82F620' },
+  textInput: {
+    borderWidth: 2,
+    borderColor: '#ccc',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#fff',
+  },
   button: {
     backgroundColor: '#3B82F6',
     padding: 14,

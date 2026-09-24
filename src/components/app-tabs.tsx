@@ -31,6 +31,10 @@ export default function AppTabs() {
       <NativeTabs.Trigger name="lessons">
         <NativeTabs.Trigger.Label>Уроки</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
+
+      <NativeTabs.Trigger name="chat">
+        <NativeTabs.Trigger.Label>Чат</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
